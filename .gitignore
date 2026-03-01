@@ -2,7 +2,7 @@
 asm/
 bin/
 assets/
-
+venv/
 # Build directory
 build/
 
