@@ -611,11 +611,22 @@ class GlobalAsmBlock:
         line = re.sub(r'^[a-zA-Z0-9_]+:\s*', '', line)
         changed_section = False
         emitting_double = False
+        should_emit = True
         if (line.startswith('glabel ') or line.startswith('jlabel ')) and self.cur_section == '.text':
             self.text_glabels.append(line.split()[1])
         if not line:
             pass # empty line
-        elif line.startswith('glabel ') or line.startswith('dlabel ') or line.startswith('jlabel ') or line.startswith('endlabel ') or (' ' not in line and line.endswith(':')):
+            should_emit = False
+        elif line.startswith('nonmatching '):
+            # Non-matching asm files start with metadata like:
+            #   nonmatching FuncName, 0xNN
+            # This is not an instruction and should not count towards .text size.
+            pass
+            should_emit = False
+        elif line.startswith('endlabel '):
+            # Metadata marker used by decomp projects, not a real assembler directive.
+            should_emit = False
+        elif line.startswith('glabel ') or line.startswith('dlabel ') or line.startswith('jlabel ') or (' ' not in line and line.endswith(':')):
             pass # label
         elif line.startswith('.section') or line in ['.text', '.data', '.rdata', '.rodata', '.bss', '.late_rodata']:
             # section change
@@ -693,14 +704,15 @@ class GlobalAsmBlock:
                 self.fail("instruction or macro call in non-.text section? not supported", real_line)
             self.add_sized(4, real_line)
         if self.cur_section == '.late_rodata':
-            if not changed_section:
+            if not changed_section and should_emit:
                 if emitting_double:
                     self.late_rodata_asm_conts.append(".align 0")
                 self.late_rodata_asm_conts.append(real_line)
                 if emitting_double:
                     self.late_rodata_asm_conts.append(".align 2")
         else:
-            self.asm_conts.append(real_line)
+            if should_emit:
+                self.asm_conts.append(real_line)
 
     def finish(self, state):
         src = [''] * (self.num_lines + 1)
@@ -886,7 +898,7 @@ def repl_float_hex(m):
 Opts = namedtuple('Opts', ['opt', 'framepointer', 'mips1', 'kpic', 'pascal', 'input_enc', 'output_enc'])
 
 def parse_source(f, opts, out_dependencies, print_source=None):
-    if opts.opt in ['O1', 'O2']:
+    if opts.opt in ['O1', 'O2', 'O3']:
         if opts.framepointer:
             min_instr_count = 6
             skip_instr_count = 5
@@ -915,19 +927,19 @@ def parse_source(f, opts, out_dependencies, print_source=None):
             min_instr_count = 2
             skip_instr_count = 2
     else:
-        raise Failure("must pass one of -g, -O0, -O1, -O2, -O2 -g3")
+        raise Failure("must pass one of -g, -O0, -O1, -O2, -O3, -O2 -g3")
     prelude_if_late_rodata = 0
     if opts.kpic:
         # Without optimizations, the PIC prelude always takes up 3 instructions.
         # With optimizations, the prelude is optimized out if there's no late rodata.
-        if opts.opt in ('g3', 'O2'):
+        if opts.opt in ('g3', 'O2', 'O3'):
             prelude_if_late_rodata = 3
         else:
             min_instr_count += 3
             skip_instr_count += 3
 
     use_jtbl_for_rodata = False
-    if opts.opt in ['O2', 'g3'] and not opts.framepointer and not opts.kpic:
+    if opts.opt in ['O2', 'O3', 'g3'] and not opts.framepointer and not opts.kpic:
         use_jtbl_for_rodata = True
 
     state = GlobalState(min_instr_count, skip_instr_count, use_jtbl_for_rodata, prelude_if_late_rodata, opts.mips1, opts.pascal)
@@ -1463,6 +1475,7 @@ def run_wrapped(argv, outfile, functions):
     group.add_argument('-O0', dest='opt', action='store_const', const='O0')
     group.add_argument('-O1', dest='opt', action='store_const', const='O1')
     group.add_argument('-O2', dest='opt', action='store_const', const='O2')
+    group.add_argument('-O3', dest='opt', action='store_const', const='O3')
     group.add_argument('-g', dest='opt', action='store_const', const='g')
     args = parser.parse_args(argv)
     opt = args.opt
@@ -1471,10 +1484,10 @@ def run_wrapped(argv, outfile, functions):
         if opt != 'O2':
             raise Failure("-g3 is only supported together with -O2")
         opt = 'g3'
-    if args.mips1 and (opt not in ('O1', 'O2') or args.framepointer):
-        raise Failure("-mips1 is only supported together with -O1 or -O2")
-    if pascal and opt not in ('O1', 'O2', 'g3'):
-        raise Failure("Pascal is only supported together with -O1, -O2 or -O2 -g3")
+    if args.mips1 and (opt not in ('O1', 'O2', 'O3') or args.framepointer):
+        raise Failure("-mips1 is only supported together with -O1, -O2 or -O3")
+    if pascal and opt not in ('O1', 'O2', 'O3', 'g3'):
+        raise Failure("Pascal is only supported together with -O1, -O2, -O3 or -O2 -g3")
     opts = Opts(opt, args.framepointer, args.mips1, args.kpic, pascal, args.input_enc, args.output_enc)
 
     if args.objfile is None:

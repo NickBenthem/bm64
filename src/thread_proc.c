@@ -6,6 +6,7 @@
 // thread_proc.c
 
 extern s32 D_802AB1F0;
+extern OSMesg D_802AAC38;
 
 struct ThreadProc gThreadProcs[THREAD_PROC_MAX_COUNT];
 
@@ -28,7 +29,7 @@ s32 gNumQueuedThreads;
 s32 D_802A8934; // unknown, not used
 OSMesgQueue D_802A8938;
 OSMesg D_802A8950;
-s32 gThreadFrameCount; // gThreadFrameCount
+s32 gThreadFrameCount;
 OSMesgQueue D_802A8958;
 struct UnkHackStruct802A8970 D_802A8970;
 OSSched D_802A89B0;
@@ -38,12 +39,18 @@ extern OSThread gThreadProcManagerThread;
 extern u8 gThreadProcManagerThreadStack[];
 
 static void hang(void); // inline
+s32 ThreadProc_SearchByID(u16 id);
+struct ThreadProc* ThreadProc_FindByID(u16 id);
+void ThreadProc_RunQueues(void *unused);
+s32 ThreadProc_FindMatchingFlags(u16 flags);
+u32 ThreadProc_DeleteThread(s32 id);
+s32 ThreadProc_GetThreadPri(s32 id);
 
 /*
  * Init the system related to the array of elements for gThreadProcs.
  */
 void ThreadProc_Init(OSThread *thread, s32 baseID, s32 basePri) {
-    OSMesg *mesg = &D_802AAC30.mesg;
+    OSMesg *mesg = &D_802AAC38;
     struct ThreadProc* ptr;
     s32 mode;
     s32 i;
@@ -65,7 +72,7 @@ void ThreadProc_Init(OSThread *thread, s32 baseID, s32 basePri) {
     *mesg = osScGetCmdQ(&D_802A89B0);
 
     // the thread proc manager will use the 9th ID in the list, so add 9.
-    osCreateThread(&gThreadProcManagerThread, baseID + 9, &ThreadProc_RunQueues, 0, &gThreadProcManagerThreadStack[0x3F8], 0x7D);
+    osCreateThread(&gThreadProcManagerThread, baseID + 9, &ThreadProc_RunQueues, 0, &D_802AB1F0, 0x7D);
     osStartThread(&gThreadProcManagerThread);
 
     gGameThreadPtr = thread;
@@ -203,6 +210,7 @@ void ThreadProc_TryKillRunningThread(void) {
  */
 u32 ThreadProc_DeleteThread(s32 id) {
     struct ThreadProc* ptr;
+    struct ThreadProc* ptr2;
 
     // we cannot terminate any more threads. hang.
     if (gNumRunningThreads == 0) {
@@ -210,16 +218,17 @@ u32 ThreadProc_DeleteThread(s32 id) {
     }
 
     ptr = ThreadProc_FindByID(id);
+    ptr2 = ptr;
 
     // unable to locate the thread. hang.
-    if (ptr == NULL) {
+    if (ptr2 == NULL) {
         hang();
     }
 
     // clear the flags to mark that the thread has stopped.
-    ptr->flags = 0;
+    ptr2->flags = 0;
     gNumRunningThreads--;
-    return ptr->id;
+    return ptr2->id;
 }
 
 static void hang(void) {
@@ -356,9 +365,13 @@ s32 ThreadProc_SetThreadPriRelativeByID(s32 id, OSPri pri) {
  * Set the relative priority of the current thread.
  */
 s32 ThreadProc_SetCurrThreadPriRelative(OSPri pri) {
-    s32 pad;
-    s32 newVal = gGameThreadBasePri + pri;
-    return ThreadProc_SetThreadPri(osGetThreadId(0), newVal);
+    struct {
+        s32 newVal;
+        s32 pad;
+    } sp;
+
+    sp.newVal = gGameThreadBasePri + pri;
+    return ThreadProc_SetThreadPri(osGetThreadId(0), sp.newVal);
 }
 
 /*
@@ -406,11 +419,26 @@ s32 func_80237D4C(u16 flags) {
 }
 
 // sets the upper flags of a given thread ID.
+// NON-MATCHING: compiles with different register allocation / delay slot scheduling under -O3
+#if 0
 s32 func_80237CAC(s32 id, u16 flags) {
+    s32 idx;
+    s32 off;
     struct ThreadProc* ptr;
 
     flags &= 0xFF00;
-    ptr = ThreadProc_FindByID(id);
+    idx = ThreadProc_SearchByID(id);
+    if (idx == -1) {
+        ptr = NULL;
+    } else {
+        off = idx << 2;
+        off -= idx;
+        off <<= 4;
+        off -= idx;
+        off <<= 2;
+        off -= idx;
+        ptr = (struct ThreadProc*)((u8*)&gThreadProcs[0] + (off << 3));
+    }
     if (ptr == NULL) {
         return -1;
     }
@@ -418,6 +446,8 @@ s32 func_80237CAC(s32 id, u16 flags) {
     ptr->flags |= flags;
     return id;
 }
+#endif
+#pragma GLOBAL_ASM("asm/nonmatchings/thread_proc/func_80237CAC.s")
 
 void func_80237C84(void) {
     func_80237C08(osGetThreadId(0));

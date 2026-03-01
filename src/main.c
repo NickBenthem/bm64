@@ -38,7 +38,7 @@ void Main_ThreadSetupGame(void *unused) {
     set_secure_call_arr(ZEROJMP_AL_TABLE_ID,   &gAlFuncs);
     set_secure_call_arr(ZEROJMP_PFS_TABLE_ID,  &gPfsFuncs);
 
-    OvlSetup_LoadSectionSizes(); // load gSectionSizes into the array so it can be used.
+    func_80000870(); // load gSectionSizes into the array so it can be used.
     offset = gSectionSizes[2] << 0xB;
     if (offset == 0) {
         offset = 0x80000;

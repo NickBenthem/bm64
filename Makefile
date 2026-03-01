@@ -235,7 +235,7 @@ ASFLAGS = -EB -mtune=vr4300 -march=vr4300 $(IINCS) -32
 # we support Microsoft extensions such as anonymous structs, which the compiler does support but warns for their usage. Surpress the warnings with -woff.
 CFLAGS  = -G 0 -non_shared -Xfullwarn -Xcpluscomm $(IINCS) -Wab,-r4300_mul $(CDEFS) -woff 649,838,712,807 $(MIPS_VERSION)
 
-LDFLAGS = -T undefined_syms_auto.txt -T undefined_funcs_auto.txt -T $(BUILD_DIR)/$(LD_SCRIPT) -Map $(BUILD_DIR)/$(TARGET).map --no-check-sections
+LDFLAGS = -T undefined_syms_manual.txt -T undefined_syms_auto.txt -T undefined_funcs_auto.txt -T $(BUILD_DIR)/$(LD_SCRIPT) -Map $(BUILD_DIR)/$(TARGET).map --no-check-sections
 
 
 ######################## Targets #############################
@@ -259,7 +259,7 @@ build/src/40000.c.o: OPTFLAGS := -g
 DECOMP_BM64_FILTERED := $(addprefix build/,$(addsuffix .o,$(foreach file,$(patsubst build/src/%,src/%,$(basename $(DECOMP_BM64))),$(if $(shell grep GLOBAL_ASM <${file}),${file}))))
 
 # run ASM-processor on non-libultra source files which have GLOBAL_ASM in them.
-$(DECOMP_BM64_FILTERED): CC := $(ASMPROC) $(ASMPROC_FLAGS) $(CC) -- $(AS) $(ASFLAGS) --
+$(DECOMP_BM64_FILTERED): CC = $(ASMPROC) $(ASMPROC_FLAGS) $(OPTFLAGS) $(CC_OLD) -- $(AS) $(ASFLAGS) --
 
 ######################## Build #############################
 

@@ -32,3 +32,7 @@ expected/
 *.txt
 *.c
 *.i
+
+# Keep project source tracked even with global *.c ignore.
+!src/*.c
+!src/**/*.c
